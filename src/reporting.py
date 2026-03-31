@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from datetime import datetime
+import json
+from typing import Any, Dict
 
 import pandas as pd
 
@@ -51,3 +53,13 @@ Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 def save_backtest_outputs(equity: pd.DataFrame, summary: pd.DataFrame) -> None:
     equity.to_csv(REPORT_DIR / 'backtest_equity_curve.csv', index=False)
     summary.to_csv(REPORT_DIR / 'backtest_summary.csv', index=False)
+
+
+def save_run_metadata(meta: Dict[str, Any]) -> None:
+    """
+    Persist a lightweight snapshot of the run.
+    """
+    (REPORT_DIR / "latest_run_metadata.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )

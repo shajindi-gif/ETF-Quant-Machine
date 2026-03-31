@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Dict, List
+import logging
 
 import pandas as pd
 import numpy as np
@@ -17,6 +18,11 @@ class Backtester:
         self.cost_rate = config['project']['commission_rate'] + config['project']['slippage_rate']
         self.max_positions = config['project']['max_positions']
         self.max_weight = config['risk']['per_position_max_weight']
+        self.total_exposure_cap = config['risk']['total_exposure_cap']
+        self.daily_turnover_cap = config['risk']['daily_turnover_cap']
+        self.max_portfolio_drawdown = config['risk']['max_portfolio_drawdown']
+        self.cash_buffer = config['risk']['cash_buffer']
+        self.logger = logging.getLogger(__name__)
 
     def run(self, dataset: Dict[str, pd.DataFrame], macro_bias: float = 0.0) -> tuple[pd.DataFrame, pd.DataFrame]:
         featured = {ticker: add_features(df, self.config) for ticker, df in dataset.items()}
@@ -24,6 +30,7 @@ class Backtester:
         records: List[dict] = []
         current_weights: Dict[str, float] = {}
         portfolio_value = self.initial_capital
+        portfolio_cummax = portfolio_value
 
         for date in common_dates[80:]:
             daily_rows = []
@@ -47,23 +54,71 @@ class Backtester:
                 picks['w'] = picks['w'] / picks['w'].sum()
                 picks['w'] = picks['w'].clip(upper=self.max_weight)
                 picks['w'] = picks['w'] / picks['w'].sum()
-                target_weights = dict(zip(picks['ticker'], picks['w'] * 0.95))
+                gross_cap = min(1.0 - self.cash_buffer, self.total_exposure_cap)
+                picks['w'] = picks['w'] * gross_cap
+                target_weights = dict(zip(picks['ticker'], picks['w']))
             else:
                 target_weights = {}
 
-            turnover = sum(abs(target_weights.get(t, 0.0) - current_weights.get(t, 0.0)) for t in set(target_weights) | set(current_weights))
-            trading_cost = turnover * self.cost_rate
+            # Risk control: if current drawdown breaches, move to cash for this day.
+            if portfolio_value / portfolio_cummax - 1.0 < -self.max_portfolio_drawdown:
+                if current_weights:
+                    self.logger.warning(
+                        "Drawdown cap hit on %s (drawdown=%.4f). Moving to cash.",
+                        str(date),
+                        portfolio_value / portfolio_cummax - 1.0,
+                    )
+                target_weights = {}
 
+            # Turnover definition: sum of absolute weight deltas (fraction of portfolio reallocated).
+            raw_turnover = sum(
+                abs(target_weights.get(t, 0.0) - current_weights.get(t, 0.0))
+                for t in (set(target_weights) | set(current_weights))
+            )
+
+            if self.daily_turnover_cap is not None and raw_turnover > self.daily_turnover_cap and raw_turnover > 0:
+                scale = self.daily_turnover_cap / raw_turnover
+                self.logger.warning(
+                    "Turnover cap hit on %s (turnover=%.4f, cap=%.4f). Scaling trades by %.4f.",
+                    str(date),
+                    raw_turnover,
+                    self.daily_turnover_cap,
+                    scale,
+                )
+                scaled_target: Dict[str, float] = {}
+                for t in (set(target_weights) | set(current_weights)):
+                    cur_w = current_weights.get(t, 0.0)
+                    tgt_w = target_weights.get(t, 0.0)
+                    new_w = cur_w + (tgt_w - cur_w) * scale
+                    if new_w > 0:
+                        scaled_target[t] = float(new_w)
+                target_weights = scaled_target
+
+            turnover = sum(
+                abs(target_weights.get(t, 0.0) - current_weights.get(t, 0.0))
+                for t in (set(target_weights) | set(current_weights))
+            )
+
+            pv0 = portfolio_value
+            trading_cost = turnover * pv0 * self.cost_rate
+
+            # Portfolio return uses weights at the start of the day.
             portfolio_ret = 0.0
             for _, row in daily.iterrows():
                 portfolio_ret += current_weights.get(row['ticker'], 0.0) * float(row['ret_1d'])
 
-            portfolio_value *= (1 + portfolio_ret - trading_cost)
+            daily_return = portfolio_ret - (trading_cost / pv0 if pv0 > 0 else 0.0)
+            portfolio_value = pv0 * (1 + daily_return)
+
             current_weights = target_weights
+
+            if portfolio_value > portfolio_cummax:
+                portfolio_cummax = portfolio_value
+
             records.append({
                 'date': date,
                 'portfolio_value': portfolio_value,
-                'daily_return': portfolio_ret - trading_cost,
+                'daily_return': daily_return,
                 'turnover': turnover,
                 'positions': len(current_weights),
             })
