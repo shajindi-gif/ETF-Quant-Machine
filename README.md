@@ -63,7 +63,7 @@ date,open,high,low,close,volume
 - `date`: 日期
 - `regime_score`: 大盘风险偏好（-2 到 2）
 - `liquidity_score`: 流动性与政策松紧（-2 到 2）
-- `news_sentiment_score`: 你基于华尔街日报/FT/政策新闻的主观打分（-2 到 2）
+- `news_sentiment_score`: 你基于政策新闻的主观打分（-2 到 2）
 - `china_score`: 对中国市场相关资产的方向判断（-2 到 2）
 - `us_score`: 对美股/海外风险资产的方向判断（-2 到 2）
 
