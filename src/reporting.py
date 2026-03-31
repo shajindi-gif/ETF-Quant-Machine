@@ -4,6 +4,9 @@ from pathlib import Path
 from datetime import datetime
 import json
 from typing import Any, Dict
+import platform
+import subprocess
+import sys
 
 import pandas as pd
 
@@ -59,7 +62,23 @@ def save_run_metadata(meta: Dict[str, Any]) -> None:
     """
     Persist a lightweight snapshot of the run.
     """
+    payload: Dict[str, Any] = dict(meta)
+    payload["runtime"] = {
+        "python_version": sys.version.split()[0],
+        "platform": platform.platform(),
+    }
+
+    # Best-effort git metadata (diagnostics only).
+    try:
+        payload["git"] = {
+            "commit": subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip(),
+            "branch": subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).decode("utf-8").strip(),
+        }
+        payload["git_remote_origin"] = subprocess.check_output(["git", "remote", "get-url", "origin"]).decode("utf-8").strip()
+    except Exception:
+        payload["git"] = {}
+
     (REPORT_DIR / "latest_run_metadata.json").write_text(
-        json.dumps(meta, ensure_ascii=False, indent=2),
+        json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )

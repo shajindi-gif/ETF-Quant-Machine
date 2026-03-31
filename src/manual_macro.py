@@ -60,3 +60,46 @@ def load_latest_macro_signal() -> dict:
             logger.warning("manual_macro_input.csv: `%s` is not numeric: %r", f, v)
 
     return row
+
+
+def load_macro_time_series() -> pd.DataFrame:
+    """
+    Load full manual macro input as time series for diagnostics.
+
+    Returns a dataframe sorted by date with `macro_composite`.
+    """
+    if not MANUAL_INPUT_PATH.exists():
+        raise FileNotFoundError('manual_macro_input.csv not found under data/processed/')
+
+    df = pd.read_csv(MANUAL_INPUT_PATH)
+    if df.empty:
+        raise ValueError('manual_macro_input.csv is empty')
+
+    required_cols = [
+        'date',
+        'regime_score',
+        'liquidity_score',
+        'news_sentiment_score',
+        'china_score',
+        'us_score',
+    ]
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        raise ValueError(f"manual_macro_input.csv missing required columns: {missing}")
+
+    df['date'] = pd.to_datetime(df['date'])
+    df = df.sort_values('date').drop_duplicates(subset=['date'], keep='last').reset_index(drop=True)
+    if df['date'].isna().all():
+        raise ValueError("manual_macro_input.csv: all `date` values are invalid.")
+
+    total = (
+        df['regime_score'].astype(float)
+        + df['liquidity_score'].astype(float)
+        + df['news_sentiment_score'].astype(float)
+        + 0.5 * df['china_score'].astype(float)
+        + 0.5 * df['us_score'].astype(float)
+    )
+    normalized = total / 6.0
+    normalized = normalized.clip(lower=-1.0, upper=1.0)
+    df['macro_composite'] = normalized
+    return df

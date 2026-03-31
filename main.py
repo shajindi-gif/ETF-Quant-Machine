@@ -16,6 +16,7 @@ from src.signal_engine import SignalEngine
 from src.portfolio import PortfolioConstructor
 from src.backtester import Backtester
 from src.reporting import save_daily_outputs, save_backtest_outputs, save_run_metadata
+from src.signal_diagnostics import run_signal_diagnostics
 
 
 POSITIONS_PATH = Path('data/processed/current_positions.json')
@@ -88,7 +89,7 @@ def run_backtest() -> None:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='ETF Quant Machine')
-    parser.add_argument('command', choices=['run-daily', 'backtest'])
+    parser.add_argument('command', choices=['run-daily', 'backtest', 'analyze-signals'])
     args = parser.parse_args()
 
     setup_logging()
@@ -105,4 +106,18 @@ if __name__ == '__main__':
             run_backtest()
         except Exception:
             logger.exception("backtest failed")
+            raise
+    elif args.command == 'analyze-signals':
+        try:
+            config = load_config()
+            outputs = run_signal_diagnostics(config)
+            save_run_metadata({
+                "command": "analyze-signals",
+                "generated_at": datetime.now().isoformat(timespec="seconds"),
+                "config": config,
+                "outputs": outputs,
+            })
+            logger.info("Signal diagnostics complete. Reports saved under reports/.")
+        except Exception:
+            logger.exception("analyze-signals failed")
             raise

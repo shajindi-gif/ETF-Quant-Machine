@@ -43,13 +43,21 @@ class SignalEngine:
         return signals
 
     def _compute_total_score(self, row: pd.Series, macro_score: float) -> float:
+        return float(self._compute_score_components(row, macro_score)['signal_score'])
+
+    def _compute_score_components(self, row: pd.Series, macro_score: float) -> Dict[str, float]:
+        """
+        Compute score components that sum up to the same `signal_score` as `_compute_total_score`.
+
+        This is used for diagnostics/research and must stay behavior-equivalent.
+        """
         cfg = self.signal_cfg
 
-        trend_component = row['trend_score']
-        momentum_component = np.tanh(row['momentum_score'] * 8)
-        mean_reversion_component = np.tanh(row['mean_reversion_score'] * 8)
-        breakout_component = row['breakout_score'] + row['breakdown_score']
-        relative_strength_component = np.tanh(row['relative_strength_proxy'] / 3)
+        trend_component = float(row['trend_score'])
+        momentum_component = float(np.tanh(row['momentum_score'] * 8))
+        mean_reversion_component = float(np.tanh(row['mean_reversion_score'] * 8))
+        breakout_component = float(row['breakout_score'] + row['breakdown_score'])
+        relative_strength_component = float(np.tanh(row['relative_strength_proxy'] / 3))
 
         volatility_penalty = 0.0
         if pd.notna(row['std_20']) and row['std_20'] > 0.03:
@@ -59,16 +67,50 @@ class SignalEngine:
         oversold_bonus = 0.05 if row['rsi'] < 35 else 0.0
         trend_strength_bonus = 0.05 if row['adx'] > 25 else 0.0
 
-        total = (
-            cfg['trend_weight'] * trend_component +
-            cfg['momentum_weight'] * momentum_component +
-            cfg['mean_reversion_weight'] * mean_reversion_component +
-            cfg['breakout_weight'] * breakout_component +
-            cfg['relative_strength_weight'] * relative_strength_component +
-            cfg['news_score_weight'] * macro_score +
-            volatility_penalty + overbought_penalty + oversold_bonus + trend_strength_bonus
+        trend_contrib = float(cfg['trend_weight'] * trend_component)
+        momentum_contrib = float(cfg['momentum_weight'] * momentum_component)
+        mean_reversion_contrib = float(cfg['mean_reversion_weight'] * mean_reversion_component)
+        breakout_contrib = float(cfg['breakout_weight'] * breakout_component)
+        relative_strength_contrib = float(cfg['relative_strength_weight'] * relative_strength_component)
+        macro_contrib = float(cfg['news_score_weight'] * macro_score)
+
+        raw_total = (
+            trend_contrib
+            + momentum_contrib
+            + mean_reversion_contrib
+            + breakout_contrib
+            + relative_strength_contrib
+            + macro_contrib
+            + volatility_penalty
+            + overbought_penalty
+            + oversold_bonus
+            + trend_strength_bonus
         )
-        return float(max(0.0, min(1.0, (total + 0.5))))
+        signal_score = float(max(0.0, min(1.0, (raw_total + 0.5))))
+
+        return {
+            "trend_component": trend_component,
+            "momentum_component": momentum_component,
+            "mean_reversion_component": mean_reversion_component,
+            "breakout_component": breakout_component,
+            "relative_strength_component": relative_strength_component,
+            "trend_contrib": trend_contrib,
+            "momentum_contrib": momentum_contrib,
+            "mean_reversion_contrib": mean_reversion_contrib,
+            "breakout_contrib": breakout_contrib,
+            "relative_strength_contrib": relative_strength_contrib,
+            "macro_contrib": macro_contrib,
+            "volatility_penalty": float(volatility_penalty),
+            "overbought_penalty": float(overbought_penalty),
+            "oversold_bonus": float(oversold_bonus),
+            "trend_strength_bonus": float(trend_strength_bonus),
+            "raw_total": float(raw_total),
+            "signal_score": signal_score,
+        }
+
+    def explain_score(self, row: pd.Series, macro_score: float) -> Dict[str, float]:
+        """Public wrapper for score explanation (diagnostics only)."""
+        return self._compute_score_components(row, macro_score)
 
     def _decide_action(self, score: float, row: pd.Series) -> str:
         buy_th = self.signal_cfg['timing_threshold_buy']
