@@ -1,7 +1,46 @@
+# Python
+.venv/
+venv/
 __pycache__/
 *.pyc
-.venv/
-reports/*.png
-reports/*.xlsx
+.pytest_cache/
+
+# Data
+data/raw/
+data/private/
+data/cache/
+market_data/
+broker_data/
+*.db
+*.sqlite
+*.sqlite3
+*.parquet
+*.feather
+*.pkl
+
+# Reports
+reports/private/
+reports/live/
+outputs/
+logs/
+tmp/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Editor
+.DS_Store
+.vscode/
+.idea/
+
+# Archives
+*.tgz
+*.zip
+*.tar.gz
+
+# Generated reports
 reports/*.csv
-logs/*.log
+reports/*.xlsx
+reports/*.html
