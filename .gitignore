@@ -44,3 +44,9 @@ tmp/
 reports/*.csv
 reports/*.xlsx
 reports/*.html
+
+# Generated reports
+reports/*.csv
+reports/*.xlsx
+reports/*.html
+reports/*.json
